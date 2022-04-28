@@ -310,7 +310,7 @@ int8_t bmp280_soft_reset(const struct bmp280_dev *dev)
  */
 int8_t bmp280_init(struct bmp280_dev *dev)
 {
-    int8_t rslt;
+    int8_t rslt; 
 
     /* Maximum number of tries before timeout */
     uint8_t try_count = 5;
@@ -321,6 +321,7 @@ int8_t bmp280_init(struct bmp280_dev *dev)
         while (try_count)
         {
             rslt = bmp280_get_regs(BMP280_CHIP_ID_ADDR, &dev->chip_id, 1, dev);
+            pr_info("rslt : %d chip id: %d \n", rslt, dev->chip_id);
 
             /* Check for chip id validity */
             if ((rslt == BMP280_OK) &&
@@ -905,7 +906,12 @@ int8_t i2c_reg_write(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, uint
     for(i=0; i<length; i++) tx_data[i + 1] = reg_data[i];
     int ret = i2c_master_send(etx_i2c_client_bmp, tx_data, length + 1);
     
-    return ret;
+    if(ret >= 0)
+    	return 0;
+    else
+    	return ret;
+    
+    
     
 }
 
@@ -929,7 +935,15 @@ int8_t i2c_reg_read(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, uint1
     int ret = i2c_master_send(etx_i2c_client_bmp, &reg_addr, 1);
     ret |= i2c_master_recv(etx_i2c_client_bmp, reg_data, length);
     
-    return ret;
+     if(ret >= 0)
+    	return 0;
+    else
+    	return ret;
+}
+
+void delay_ms(uint32_t delay)
+{
+	msleep(delay);
 }
 
 
@@ -945,7 +959,7 @@ static int etx_bmp_probe(struct i2c_client *client,
     uint32_t pres32, pres64;
     double pres;
 
-
+	bmp.delay_ms = delay_ms;
     /* Assign device I2C address based on the status of SDO pin (GND for PRIMARY(0x76) & VDD for SECONDARY(0x77)) */
     bmp.dev_id = BMP280_I2C_ADDR_PRIM;
 
@@ -957,11 +971,21 @@ static int etx_bmp_probe(struct i2c_client *client,
     bmp.write = i2c_reg_write;
     
      rslt = bmp280_init(&bmp);
+     
+     if(rslt < 0){
+     	pr_info("bmp init failed : %d\n", rslt);
+     	return -1;
+     	}
 
     /* Always read the current settings before writing, especially when
      * all the configuration is not modified
      */
     rslt = bmp280_get_config(&conf, &bmp);
+    
+    if(rslt < 0){
+     	pr_info("bmp get config failed : %d\n", rslt);
+     	return -1;
+     	}
 
     /* configuring the temperature oversampling, filter coefficient and output data rate */
     /* Overwrite the desired settings */
@@ -973,17 +997,33 @@ static int etx_bmp_probe(struct i2c_client *client,
     /* Setting the output data rate as 1HZ(1000ms) */
     conf.odr = BMP280_ODR_1000_MS;
     rslt = bmp280_set_config(&conf, &bmp);
+    if(rslt < 0){
+     	pr_info("bmp set config failed : %d\n", rslt);
+     	return -1;
+     	}
 
     /* Always set the power mode after setting the configuration */
     rslt = bmp280_set_power_mode(BMP280_NORMAL_MODE, &bmp);
+    if(rslt < 0){
+     	pr_info("bmp set power failed : %d\n", rslt);
+     	return -1;
+     	}
     
     /* Reading the raw data from sensor */
     rslt = bmp280_get_uncomp_data(&ucomp_data, &bmp);
+    if(rslt < 0){
+     	pr_info("bmp get raw data failed : %d\n", rslt);
+     	return -1;
+     	}
 
     /* Getting the compensated pressure using 32 bit precision */
     rslt = bmp280_get_comp_pres_32bit(&pres32, ucomp_data.uncomp_press, &bmp);
+    if(rslt < 0){
+     	pr_info("bmp get comp data failed : %d\n", rslt);
+     	return -1;
+     	}
     
-    pr_info("UP: %ld, P32: %ld \r\n",
+    pr_info("rslt : %d UP: %ld, P32: %ld \r\n", rslt,
                ucomp_data.uncomp_press,
                pres32);
  
@@ -1111,6 +1151,5 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Nitansh Nagpal");
 MODULE_DESCRIPTION("BMP280 Linux Device Driver");
 MODULE_VERSION("1.01");
-
 
 
